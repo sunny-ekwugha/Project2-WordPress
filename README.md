@@ -3,6 +3,15 @@
 
 This repository provides a comprehensive guide to hosting a WordPress website on Amazon Web Services (AWS) using a combination of services including EC2, RDS, EFS, and an Application Load Balancer (ALB).
 
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Setup Instructions](#setup-instructions)
+- [Installation Script](#installation-script)
+- [Accessing WordPress](#accessing-wordpress)
+- [Domain Registration](#domain-registration)
+- [License](#license)
+
 ## Prerequisites
 
 1. **AWS CLI**: Ensure that the AWS Command Line Interface (CLI) is installed and configured on your machine.
@@ -152,4 +161,10 @@ sudo service httpd restart
 
 Register a domain name in AWS Route 53 to point to your Load Balancer's DNS name for easier access.
 
+```
+
+### Notes:
+- Make sure to replace placeholders like `<your-efs-id>` and `<instance-id>` with actual values.
+- You can add more sections based on your specific needs or additional features of your setup.
+- Consider including a troubleshooting section if necessary. 
 
