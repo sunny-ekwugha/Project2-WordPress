@@ -52,7 +52,7 @@ This repository provides a comprehensive guide to hosting a WordPress website on
 2. **EICE Security Group**: SSH access restricted to VPC CIDR block.
 3. **Webapp Security Group**: Allow HTTP and HTTPS access restricted to ALB security group.
 4. **Database Security Group**: Allow MySQL/Aurora access restricted to Webapp security group.
-5. **EFS Security Group**: Allow NFS (2049) and SSH (22) access restricted to appropriate groups.
+5. **EFS Security Group**: Allow NFS (2049) and SSH (22) access restricted to Webapp and EICE security groups respectively. After creating the EFS security group, edit the inbound rule again. This time, allow NFS (2049) access restricted to EFS security group.
 
 ### Step 6: Create Resources
 
