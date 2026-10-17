@@ -6,12 +6,6 @@ This project demonstrates how to deploy a WordPress website on Amazon Web Servic
 
 The architecture is designed to separate the web application from the database and use shared storage for WordPress files.
 
-## Architecture
-
-![WordPress on AWS architecture](WordPress_on_AWS.png)
-
-*If your repository uses a different architecture image filename, update the path above to match the actual file.*
-
 ### AWS Services Used
 
 | Service | Purpose |
