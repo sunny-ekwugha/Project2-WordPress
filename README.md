@@ -1,161 +1,241 @@
-```markdown
 # Host a WordPress Website on AWS
 
-This repository provides a comprehensive guide to hosting a WordPress website on Amazon Web Services (AWS) using a combination of services including EC2, RDS, EFS, and an Application Load Balancer (ALB).
+## Overview
+
+This project demonstrates how to deploy a WordPress website on Amazon Web Services (AWS) using a scalable, multi-tier architecture. It explores cloud networking, web hosting, shared file storage, managed databases, load balancing, and secure access to application servers.
+
+The architecture is designed to separate the web application from the database and use shared storage for WordPress files.
+
+## Architecture
+
+![WordPress on AWS architecture](WordPress_on_AWS.png)
+
+*If your repository uses a different architecture image filename, update the path above to match the actual file.*
+
+### AWS Services Used
+
+| Service | Purpose |
+|---|---|
+| Amazon VPC | Provides an isolated network for the application |
+| Public and private subnets | Separates internet-facing resources from application and data resources |
+| Internet Gateway | Provides internet connectivity for public resources |
+| NAT Gateway | Allows private application instances to initiate outbound internet connections |
+| Amazon EC2 | Hosts the Apache web server and WordPress application |
+| Amazon EFS | Provides shared file storage for WordPress files |
+| Amazon RDS for MySQL | Stores WordPress application data |
+| Application Load Balancer (ALB) | Distributes incoming HTTP/HTTPS requests across healthy application instances |
+| EC2 Instance Connect Endpoint | Enables access to supported private EC2 instances without requiring a public IP address |
+| Amazon Route 53 | Provides DNS hosting and domain routing |
+| AWS Certificate Manager (ACM) | Provides TLS certificates for HTTPS on supported AWS load balancers |
+| Amazon CloudWatch and SNS | Can be used for monitoring, alarms, and notifications |
+
+## Architecture and Security
+
+A typical deployment uses the following layout:
+
+- **Public subnets:** Host the Application Load Balancer and NAT Gateway across Availability Zones.
+- **Private application subnets:** Host EC2 instances running Apache, PHP, and WordPress.
+- **Private data subnets:** Host the RDS database. EFS mount targets should be created in the appropriate Availability Zones.
+- **Shared storage:** EFS allows multiple application instances to access shared WordPress files.
+- **Database:** RDS stores WordPress content, user accounts, settings, and other application data.
+
+### Recommended Security Group Rules
+
+| Security group | Inbound access |
+|---|---|
+| ALB | HTTP (80) and/or HTTPS (443) from intended client networks, commonly the internet for a public website |
+| Web application | HTTP (80) only from the ALB security group |
+| RDS | MySQL (3306) only from the web application security group |
+| EFS | NFS (2049) only from the web application security group |
+| EC2 Instance Connect Endpoint | Configure endpoint and instance security rules according to AWS EC2 Instance Connect requirements |
+
+Avoid opening SSH or database ports to the entire internet. Use IAM roles for EC2 access to AWS services instead of storing long-lived AWS access keys on instances.
 
 ## Prerequisites
 
-1. **AWS CLI**: Ensure that the AWS Command Line Interface (CLI) is installed and configured on your machine.
-2. **IAM User**: Create an IAM user if you don't already have one.
-3. **Access Keys**: Generate Access and Secret Keys for the IAM user.
-4. **Configuration**: Configure your IAM credentials on your local machine:
-   ```bash
-   aws configure
-   ```
-5. **Test Configuration**: Verify your setup:
-   ```bash
-   aws iam get-user
-   ```
+Before starting, you should have:
 
-## Setup Instructions
+- An AWS account with appropriate permissions to create the required resources.
+- Basic familiarity with VPCs, subnets, route tables, and security groups.
+- An EC2 instance running a compatible Amazon Linux release.
+- An EFS file system with mount targets and correctly configured security groups.
+- An RDS for MySQL database in private subnets.
+- A target group and Application Load Balancer.
+- A domain name, if you want to configure a custom domain.
+- A plan for securely storing database credentials.
 
-### Step 1: Create VPC
+The resources in this project may incur AWS charges. Review the pricing of EC2, RDS, EFS, NAT Gateway, and the load balancer before deployment.
 
-1. Create a Virtual Private Cloud (VPC) and enable DNS hostname in the VPC settings.
-2. Create an Internet Gateway and attach it to the VPC.
+## Deployment Guide
 
-### Step 2: Create Subnets
+### Step 1: Create the VPC and Subnets
 
-- **Public Subnets** (in Availability Zones 1 and 2) for the Application Load Balancer and NAT Gateway.
-- **Private App Subnets** (in Availability Zones 1 and 2) for the EC2 instances.
-- **Private Data Subnets** (in Availability Zones 1 and 2) for RDS and EFS.
+1. Create a VPC and enable DNS resolution and DNS hostnames.
+2. Create public subnets in at least two Availability Zones.
+3. Create private application subnets in at least two Availability Zones.
+4. Create private database subnets in at least two Availability Zones.
+5. Attach an Internet Gateway to the VPC.
+6. Associate public subnets with a route table containing a default route to the Internet Gateway.
+7. Configure private application subnet routing through a NAT Gateway if outbound internet access is required.
 
-### Step 3: Create Route Tables
+Database subnets should remain private. A NAT Gateway is generally not required for database subnets unless there is a specific networking requirement.
 
-1. **Public Route Table**:
-   - Destination: `0.0.0.0/0`
-   - Target: Internet Gateway
-   - Associate with Public Subnets.
+### Step 2: Configure Security Groups
 
-2. **Private Route Table**:
-   - Destination: `0.0.0.0/0`
-   - Target: NAT Gateway
-   - Associate with Private App and Data Subnets.
+Create security groups for the ALB, web application, database, and EFS.
 
-### Step 4: Create NAT Gateway
+Reference the appropriate source security group for application-to-database and application-to-EFS communication. Avoid relying solely on broad VPC CIDR rules when a security group reference is suitable.
 
-- Enable instances in private subnets to connect securely to the internet.
+### Step 3: Create EFS
 
-### Step 5: Set Up Security Groups
+1. Create an Amazon EFS file system.
+2. Create mount targets in the Availability Zones used by the application.
+3. Allow inbound NFS traffic on port 2049 from the web application security group.
+4. Verify that the EC2 instances can reach the EFS mount targets.
 
-1. **ALB Security Group**: Allow HTTP (80) and HTTPS (443) access from anywhere, SSH (22) access restricted to EICE security group.
-2. **EICE Security Group**: SSH access restricted to VPC CIDR block.
-3. **Webapp Security Group**: Allow HTTP and HTTPS access restricted to ALB security group.
-4. **Database Security Group**: Allow MySQL/Aurora access restricted to Webapp security group.
-5. **EFS Security Group**: Allow NFS (2049) and SSH (22) access restricted to Webapp and EICE security groups respectively. After creating the EFS security group, edit the inbound rule again. This time, allow NFS (2049) access restricted to EFS security group.
+### Step 4: Create the RDS Database
 
-### Step 6: Create Resources
+1. Create an RDS for MySQL database.
+2. Place it in a private DB subnet group.
+3. Disable public accessibility.
+4. Configure the database security group to accept MySQL connections only from the web application security group.
+5. Create the WordPress database and database user using secure credentials.
 
-1. **EC2 Instance Connect Endpoint (EICE)**: For secure SSH access from the public to the private subnet.
-2. **Elastic File System (EFS)**: For scalable NFS file storage.
-3. **Relational Database Service (RDS)**: Set up an RDS instance.
-4. **EC2 Instance**: Launch an EC2 instance.
-5. **Target Group**: Route requests to registered EC2 targets.
-6. **Application Load Balancer (ALB)**: Distribute incoming traffic.
+Keep the database endpoint, database name, username, and password available for WordPress configuration. Do not commit passwords or other secrets to GitHub.
 
-## Installation Script
+### Step 5: Launch the EC2 Application Instance
 
-Use the following script to install WordPress on the EC2 instance:
+Launch an EC2 instance in a private application subnet using a supported Amazon Linux release.
+
+Install and configure Apache, PHP, and the PHP extensions required by your chosen WordPress version. Configure the instance to mount EFS and connect to RDS.
+
+For production-style deployments, consider using a launch template and Auto Scaling group so that instances can be replaced and scaled as needed.
+
+### Step 6: Install WordPress
+
+The following is an illustrative installation script for Amazon Linux 2023. Review it against your environment before running it. It assumes that the EFS file system is empty or already prepared for this application.
+
+Replace `fs-REPLACE_WITH_YOUR_ID` and `us-east-1` with your actual EFS file system ID and AWS Region.
 
 ```bash
-# Update software packages
-sudo yum update -y
+#!/bin/bash
+set -euo pipefail
 
-# Create HTML directory
-sudo mkdir -p /var/www/html
+EFS_ID="fs-REPLACE_WITH_YOUR_ID"
+AWS_REGION="us-east-1"
+WEB_ROOT="/var/www/html"
 
-# Mount EFS
-# Change the fs number to your fs number
-sudo mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport fs-<your-efs-id>.efs.us-east-1.amazonaws.com:/ /var/www/html
+# Install the web server, PHP, and EFS utilities.
+dnf update -y
+dnf install -y httpd php php-fpm php-mysqlnd \
+  php-curl php-gd php-mbstring php-xml \
+  php-intl php-zip amazon-efs-utils tar
 
-# Install Apache web server
-sudo yum install -y httpd
-sudo systemctl enable httpd
-sudo systemctl start httpd
+# Start the web server and PHP-FPM.
+systemctl enable --now php-fpm
+systemctl enable --now httpd
 
-# Install PHP 8 and necessary extensions
-sudo dnf install -y \
-php \
-php-cli \
-php-cgi \
-php-curl \
-php-mbstring \
-php-gd \
-php-mysqlnd \
-php-gettext \
-php-json \
-php-xml \
-php-fpm \
-php-intl \
-php-zip \
-php-bcmath \
-php-ctype \
-php-fileinfo \
-php-openssl \
-php-pdo \
-php-tokenizer
+# Mount EFS as the shared WordPress document root.
+mkdir -p "$WEB_ROOT"
 
-# Install MySQL Server
-sudo wget https://dev.mysql.com/get/mysql80-community-release-el9-1.noarch.rpm
-sudo dnf install -y mysql80-community-release-el9-1.noarch.rpm
-sudo rpm --import https://repo.mysql.com/RPM-GPG-KEY-mysql-2023
-sudo dnf install -y mysql-community-server
+if ! mountpoint -q "$WEB_ROOT"; then
+  mount -t efs -o tls \
+    "${EFS_ID}:/" "$WEB_ROOT"
+fi
 
-# Start MySQL server
-sudo systemctl start mysqld
-sudo systemctl enable mysqld
+# Persist the mount across reboots.
+grep -qF "${EFS_ID}:/ ${WEB_ROOT} efs" /etc/fstab || \
+  echo "${EFS_ID}:/ ${WEB_ROOT} efs _netdev,tls 0 0" \
+  >> /etc/fstab
 
-# Set permissions
-sudo usermod -a -G apache ec2-user
-sudo chown -R ec2-user:apache /var/www
-sudo chmod 2775 /var/www
-sudo find /var/www -type d -exec sudo chmod 2775 {} \;
-sudo find /var/www -type f -exec chmod 664 {} +
-sudo chown apache:apache -R /var/www/html
+# Download and extract WordPress into a temporary directory.
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
 
-# Download WordPress
-wget https://wordpress.org/latest.tar.gz
-tar -xzf latest.tar.gz
-sudo cp -r wordpress/* /var/www/html/
+curl -fsSL https://wordpress.org/latest.tar.gz \
+  -o "$TMP_DIR/wordpress.tar.gz"
 
-# Configure WordPress
-sudo cp /var/www/html/wp-config-sample.php /var/www/html/wp-config.php
-sudo vi /var/www/html/wp-config.php
+tar -xzf "$TMP_DIR/wordpress.tar.gz" -C "$TMP_DIR"
 
-# Restart the web server
-sudo service httpd restart
+# Copy WordPress files to the mounted EFS document root.
+cp -a "$TMP_DIR/wordpress/." "$WEB_ROOT/"
+
+# Set basic ownership and permissions.
+chown -R apache:apache "$WEB_ROOT"
+find "$WEB_ROOT" -type d -exec chmod 755 {} +
+find "$WEB_ROOT" -type f -exec chmod 644 {} +
+
+systemctl restart php-fpm
+systemctl restart httpd
+
+echo "WordPress files have been installed."
+echo "Configure wp-config.php with your RDS details."
 ```
 
-## Accessing WordPress
+**Important:** This is a starting point, not a complete production deployment. Verify the EFS mount, PHP-FPM/Apache integration, file permissions, and EFS access-point configuration for your environment. Ensure the EFS document root does not contain files you need to preserve before copying WordPress into it. Run the installation only once per shared file system, or use a controlled deployment process for subsequent instances.
 
-1. SSH into the EC2 instance using the EC2 instance endpoint connect:
-   ```bash
-   aws ec2-instance-connect ssh --instance-id <instance-id>
-   ```
-2. After installation, restart Apache to enable the changes:
-   ```bash
-   sudo service httpd restart
-   ```
-3. Open a web browser and navigate to the DNS name of the Load Balancer to access your WordPress site.
+### Step 7: Configure WordPress and RDS
 
-## Domain Registration
+1. Open the WordPress installation page through the ALB after confirming the web server is reachable.
+2. Follow the WordPress setup wizard, or configure `wp-config.php` with your RDS database name, username, password, and endpoint.
+3. Use a secure method to provide database credentials. For production, consider AWS Secrets Manager or another approved secret-management approach.
+4. Verify that WordPress can connect to RDS and create its database tables.
+5. Confirm that shared files remain available when application instances are replaced.
 
-Register a domain name in AWS Route 53 to point to your Load Balancer's DNS name for easier access.
+Do not install a separate local MySQL server on the EC2 instance when RDS is the intended database service.
 
-```
+### Step 8: Configure the Load Balancer and Domain
 
-### Notes:
-- Make sure to replace placeholders like `<your-efs-id>` and `<instance-id>` with actual values.
-- You can add more sections based on your specific needs or additional features of your setup.
-- Consider including a troubleshooting section if necessary. 
+1. Create a target group for the WordPress EC2 instances.
+2. Configure a health check that matches the application's expected response.
+3. Create an Application Load Balancer in the public subnets.
+4. Register the application instances and verify that they become healthy.
+5. Configure an HTTPS listener using an ACM certificate in the same Region as the load balancer.
+6. If you have a custom domain, configure the appropriate Route 53 record to point to the ALB.
 
+WordPress should be configured with the correct site URL and HTTPS settings when HTTPS is enabled.
+
+## Accessing the Application
+
+For private EC2 instances, connect through an appropriately configured EC2 Instance Connect Endpoint or another approved management method.
+
+The `aws ec2-instance-connect ssh` command requires the AWS CLI and EC2 Instance Connect support to be configured correctly. The endpoint and instance security groups must permit the required connection.
+
+Once the ALB target is healthy, open its DNS name in a browser to test the site. After configuring DNS and HTTPS, test the custom domain as well.
+
+## Troubleshooting
+
+- **The ALB target is unhealthy:** Check the target port, health-check path, Apache status, and security group rules.
+- **The site cannot connect to the database:** Verify the RDS endpoint, database credentials, database security group, and private network connectivity.
+- **EFS will not mount:** Check the file system ID, mount targets, NFS port 2049, security groups, and EFS utilities.
+- **PHP pages do not execute correctly:** Check PHP-FPM status, Apache configuration, and installed PHP extensions.
+- **WordPress cannot upload files:** Review EFS access permissions, ownership, and the directory used for uploads.
+- **HTTPS or redirects fail:** Check the ACM certificate, ALB listener, WordPress site URL, and HTTPS/proxy configuration.
+
+## Cost Management and Cleanup
+
+AWS resources may continue generating charges after the website is no longer in use. When you have finished testing, review and remove resources you no longer need, including:
+
+- EC2 instances and unused EBS volumes.
+- Application Load Balancers and target groups.
+- NAT Gateways and associated public IPv4 addresses.
+- RDS database instances and unused snapshots.
+- EFS file systems and mount targets.
+- Route 53 hosted zones and records that are no longer required.
+
+Back up any data you want to retain before deleting resources. Do not delete shared or production resources without confirming their ownership and purpose.
+
+## What This Project Demonstrates
+
+- AWS VPC design and subnet segmentation.
+- Public and private application architecture.
+- EC2-based web hosting with Apache and PHP.
+- Shared storage with Amazon EFS.
+- Managed relational databases with Amazon RDS.
+- Load balancing, health checks, and availability across Availability Zones.
+- DNS and HTTPS configuration.
+- Security group design and cloud resource cost awareness.
+
+## License
+
+Add a license file if you intend to distribute this project under a specific open-source license. Otherwise, state the repository's actual licensing terms here.
